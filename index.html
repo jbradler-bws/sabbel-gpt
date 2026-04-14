@@ -129,6 +129,120 @@
                 </div>
             </div>
         </div>
+
+        <section class="mt-8 bw-card p-6 rounded-2xl">
+            <div class="flex flex-col md:flex-row md:items-end gap-4 mb-6">
+                <div class="flex-1">
+                    <h2 class="text-sm uppercase tracking-widest bw-muted font-bold">Token-Datenbank bearbeiten</h2>
+                    <p class="text-xs bw-muted mt-2">
+                        Bearbeite Tokens und deren Folgeoptionen (Wort + base). Jede Token-Liste sollte in Summe idealerweise 1.0 ergeben.
+                    </p>
+                </div>
+                <div class="w-full md:w-72">
+                    <label class="text-xs font-semibold bw-muted block mb-1">Suche Token</label>
+                    <input x-model.trim="dbSearch" type="text" placeholder="z. B. Fahrzeug"
+                           class="w-full border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                </div>
+            </div>
+
+            <div class="bw-card bg-[#f8f8f8] p-4 rounded-xl mb-6">
+                <h3 class="text-xs uppercase tracking-widest bw-muted font-bold mb-3">Neues Token hinzufügen</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <input x-model.trim="newDbTokenName" type="text" placeholder="Token-Name"
+                           class="border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                    <input x-model.trim="newDbOptionWord" type="text" placeholder="Erstes Folgewort"
+                           class="border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                    <input x-model.number="newDbOptionBase" type="number" min="0" max="1" step="0.01" placeholder="base (0-1)"
+                           class="border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                    <button @click="addTokenKey()"
+                            class="bg-[#f7b130] hover:bg-[#eb9a06] text-[#1f1f1f] font-semibold rounded-lg px-4 py-2 text-sm transition">
+                        Token anlegen
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-4" x-show="editorMessage">
+                <p class="text-sm" :class="editorError ? 'text-red-600' : 'text-green-700'" x-text="editorMessage"></p>
+            </div>
+
+            <div class="space-y-4 max-h-[700px] overflow-auto pr-1">
+                <template x-for="tokenKey in getDatabaseKeys()" :key="tokenKey">
+                    <div :id="getTokenDomId(tokenKey)" class="border border-[#e6e6e6] rounded-xl bg-white transition-shadow">
+                        <div class="p-4 flex flex-col lg:flex-row lg:items-center gap-3">
+                            <button @click="toggleEditorToken(tokenKey)"
+                                    class="px-3 py-2 rounded-lg bg-[#f8f8f8] hover:bg-[#ececec] text-xs font-bold bw-muted no-select">
+                                <span x-text="isEditorTokenOpen(tokenKey) ? 'Einklappen' : 'Aufklappen'"></span>
+                            </button>
+
+                            <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                <input :value="getTokenDraftName(tokenKey)"
+                                       @input="setTokenDraftName(tokenKey, $event.target.value)"
+                                       type="text"
+                                       class="border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                                <button @click="renameTokenKey(tokenKey)"
+                                        class="bg-[#3379fa] hover:bg-[#2563eb] text-white rounded-lg px-3 py-2 text-sm">
+                                    Token umbenennen
+                                </button>
+                                <button @click="deleteTokenKey(tokenKey)"
+                                        class="bg-red-100 hover:bg-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">
+                                    Token löschen
+                                </button>
+                            </div>
+
+                            <div class="text-xs bw-muted font-mono">
+                                <div x-text="`Optionen: ${database[tokenKey].length}`"></div>
+                                <div x-text="`Summe base: ${getProbabilitySum(tokenKey)}`"></div>
+                            </div>
+                        </div>
+
+                        <div x-show="isEditorTokenOpen(tokenKey)" x-transition class="px-4 pb-4">
+                            <div class="space-y-3 mb-3">
+                                <template x-for="(opt, optIndex) in database[tokenKey]" :key="`${tokenKey}-${optIndex}`">
+                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                                        <input x-model.trim="database[tokenKey][optIndex].word" type="text"
+                                               class="md:col-span-6 border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                                        <input :value="database[tokenKey][optIndex].base"
+                                               @input="updateOptionBase(tokenKey, optIndex, $event.target.value)"
+                                               type="number" min="0" max="1" step="0.01"
+                                               class="md:col-span-3 border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                                        <div class="md:col-span-3 grid grid-cols-2 gap-2">
+                                            <button @click="followOptionToken(database[tokenKey][optIndex].word)"
+                                                    class="bg-[#eaf1ff] hover:bg-[#dbe7ff] text-[#2563eb] rounded-lg px-3 py-2 text-sm"
+                                                    title="Zum Token des Folgeworts springen">
+                                                Folgen
+                                            </button>
+                                            <button @click="deleteOption(tokenKey, optIndex)"
+                                                    class="bg-red-100 hover:bg-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">
+                                                Löschen
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center bg-[#f8f8f8] p-3 rounded-lg">
+                                <input :value="getNewOptionDraft(tokenKey).word"
+                                       @input="setNewOptionDraft(tokenKey, 'word', $event.target.value)"
+                                       type="text" placeholder="Neues Folgewort"
+                                       class="md:col-span-6 border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                                <input :value="getNewOptionDraft(tokenKey).base"
+                                       @input="setNewOptionDraft(tokenKey, 'base', $event.target.value)"
+                                       type="number" min="0" max="1" step="0.01" placeholder="base"
+                                       class="md:col-span-2 border border-[#e6e6e6] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3379fa]/30">
+                                <button @click="addOptionToToken(tokenKey)"
+                                        class="md:col-span-2 bg-[#f7b130] hover:bg-[#eb9a06] text-[#1f1f1f] rounded-lg px-3 py-2 text-sm font-semibold">
+                                    Option hinzufügen
+                                </button>
+                                <button @click="normalizeTokenProbabilities(tokenKey)"
+                                        class="md:col-span-2 bg-[#444444] hover:bg-[#2b2b2b] text-white rounded-lg px-3 py-2 text-sm">
+                                    Normieren
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -137,6 +251,15 @@
                 temp: 0.7,
                 history: [], // Speichert Objekte: {word: "Hallo", color: "#fff"}
                 currentOptions: [],
+                dbSearch: "",
+                editorOpenTokens: {},
+                tokenDraftNames: {},
+                newOptionDrafts: {},
+                newDbTokenName: "",
+                newDbOptionWord: "",
+                newDbOptionBase: 1,
+                editorMessage: "",
+                editorError: false,
                 
                 // Farbpalette für Tokens (Tailwind colors)
                 tokenColors: [
@@ -562,6 +685,252 @@
                     this.reset();
                 },
 
+                setEditorMessage(message, isError = false) {
+                    this.editorMessage = message;
+                    this.editorError = isError;
+                },
+
+                clearEditorMessage() {
+                    this.editorMessage = "";
+                    this.editorError = false;
+                },
+
+                getDatabaseKeys() {
+                    let keys = Object.keys(this.database).sort((a, b) => a.localeCompare(b, "de"));
+                    if (!this.dbSearch) {
+                        return keys;
+                    }
+                    let q = this.dbSearch.toLowerCase();
+                    return keys.filter(key => key.toLowerCase().includes(q));
+                },
+
+                getTokenDomId(tokenKey) {
+                    return `token-editor-${tokenKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+                },
+
+                toggleEditorToken(tokenKey) {
+                    this.editorOpenTokens[tokenKey] = !this.editorOpenTokens[tokenKey];
+                    this.ensureEditorDrafts(tokenKey);
+                },
+
+                isEditorTokenOpen(tokenKey) {
+                    return !!this.editorOpenTokens[tokenKey];
+                },
+
+                ensureEditorDrafts(tokenKey) {
+                    if (!this.tokenDraftNames[tokenKey]) {
+                        this.tokenDraftNames[tokenKey] = tokenKey;
+                    }
+                    if (!this.newOptionDrafts[tokenKey]) {
+                        this.newOptionDrafts[tokenKey] = { word: "", base: 0.1 };
+                    }
+                },
+
+                getTokenDraftName(tokenKey) {
+                    this.ensureEditorDrafts(tokenKey);
+                    return this.tokenDraftNames[tokenKey];
+                },
+
+                setTokenDraftName(tokenKey, value) {
+                    this.ensureEditorDrafts(tokenKey);
+                    this.tokenDraftNames[tokenKey] = value;
+                },
+
+                getNewOptionDraft(tokenKey) {
+                    this.ensureEditorDrafts(tokenKey);
+                    return this.newOptionDrafts[tokenKey];
+                },
+
+                setNewOptionDraft(tokenKey, field, value) {
+                    this.ensureEditorDrafts(tokenKey);
+                    this.newOptionDrafts[tokenKey][field] = value;
+                },
+
+                sanitizeBase(value) {
+                    let parsed = Number(value);
+                    if (!Number.isFinite(parsed)) {
+                        return 0;
+                    }
+                    return Math.max(0, Math.min(1, Number(parsed.toFixed(4))));
+                },
+
+                getProbabilitySum(tokenKey) {
+                    let sum = (this.database[tokenKey] || []).reduce((acc, option) => acc + Number(option.base || 0), 0);
+                    return sum.toFixed(3);
+                },
+
+                updateOptionBase(tokenKey, index, value) {
+                    this.database[tokenKey][index].base = this.sanitizeBase(value);
+                    this.updateOptions();
+                    this.clearEditorMessage();
+                },
+
+                addTokenKey() {
+                    let key = this.newDbTokenName.trim();
+                    let firstWord = this.newDbOptionWord.trim();
+                    let firstBase = this.sanitizeBase(this.newDbOptionBase);
+
+                    if (!key) {
+                        this.setEditorMessage("Bitte einen Token-Namen angeben.", true);
+                        return;
+                    }
+                    if (this.database[key]) {
+                        this.setEditorMessage(`Token "${key}" existiert bereits.`, true);
+                        return;
+                    }
+                    if (!firstWord) {
+                        this.setEditorMessage("Bitte ein erstes Folgewort für den neuen Token angeben.", true);
+                        return;
+                    }
+
+                    this.database[key] = [{ word: firstWord, base: firstBase }];
+                    this.tokenDraftNames[key] = key;
+                    this.newOptionDrafts[key] = { word: "", base: 0.1 };
+                    this.editorOpenTokens[key] = true;
+                    this.newDbTokenName = "";
+                    this.newDbOptionWord = "";
+                    this.newDbOptionBase = 1;
+                    this.setEditorMessage(`Token "${key}" wurde angelegt.`);
+                    this.updateOptions();
+                },
+
+                renameTokenKey(oldKey) {
+                    if (oldKey === "default") {
+                        this.setEditorMessage('Der Token "default" kann nicht umbenannt werden.', true);
+                        return;
+                    }
+                    let newKey = (this.tokenDraftNames[oldKey] || "").trim();
+                    if (!newKey) {
+                        this.setEditorMessage("Neuer Token-Name darf nicht leer sein.", true);
+                        return;
+                    }
+                    if (newKey === oldKey) {
+                        this.setEditorMessage("Token-Name wurde nicht geändert.");
+                        return;
+                    }
+                    if (this.database[newKey]) {
+                        this.setEditorMessage(`Token "${newKey}" existiert bereits.`, true);
+                        return;
+                    }
+
+                    this.database[newKey] = this.database[oldKey];
+                    delete this.database[oldKey];
+
+                    this.tokenDraftNames[newKey] = newKey;
+                    this.editorOpenTokens[newKey] = this.editorOpenTokens[oldKey];
+                    this.newOptionDrafts[newKey] = this.newOptionDrafts[oldKey] || { word: "", base: 0.1 };
+
+                    delete this.tokenDraftNames[oldKey];
+                    delete this.editorOpenTokens[oldKey];
+                    delete this.newOptionDrafts[oldKey];
+
+                    this.setEditorMessage(`Token "${oldKey}" wurde in "${newKey}" umbenannt.`);
+                    this.updateOptions();
+                },
+
+                deleteTokenKey(tokenKey) {
+                    if (tokenKey === "default") {
+                        this.setEditorMessage('Der Token "default" kann nicht gelöscht werden.', true);
+                        return;
+                    }
+                    if (!confirm(`Token "${tokenKey}" wirklich löschen?`)) {
+                        return;
+                    }
+                    delete this.database[tokenKey];
+                    delete this.tokenDraftNames[tokenKey];
+                    delete this.editorOpenTokens[tokenKey];
+                    delete this.newOptionDrafts[tokenKey];
+                    this.setEditorMessage(`Token "${tokenKey}" wurde gelöscht.`);
+                    this.updateOptions();
+                },
+
+                addOptionToToken(tokenKey) {
+                    let draft = this.getNewOptionDraft(tokenKey);
+                    let word = (draft.word || "").trim();
+                    let base = this.sanitizeBase(draft.base);
+
+                    if (!word) {
+                        this.setEditorMessage("Bitte ein Folgewort für die neue Option angeben.", true);
+                        return;
+                    }
+
+                    this.database[tokenKey].push({ word, base });
+                    this.newOptionDrafts[tokenKey] = { word: "", base: 0.1 };
+                    this.setEditorMessage(`Neue Option für "${tokenKey}" hinzugefügt.`);
+                    this.updateOptions();
+                },
+
+                deleteOption(tokenKey, index) {
+                    this.database[tokenKey].splice(index, 1);
+                    this.setEditorMessage(`Option aus "${tokenKey}" gelöscht.`);
+                    this.updateOptions();
+                },
+
+                findTokenKeyByWord(word) {
+                    let cleaned = (word || "").trim();
+                    if (!cleaned) {
+                        return "";
+                    }
+
+                    if (this.database[cleaned]) {
+                        return cleaned;
+                    }
+
+                    let withoutPunctuation = cleaned.replace(/[.,!?;:]/g, "");
+                    if (this.database[withoutPunctuation]) {
+                        return withoutPunctuation;
+                    }
+
+                    let lower = cleaned.toLowerCase();
+                    let exactCaseInsensitive = Object.keys(this.database).find(key => key.toLowerCase() === lower);
+                    if (exactCaseInsensitive) {
+                        return exactCaseInsensitive;
+                    }
+
+                    let lowerNoPunctuation = withoutPunctuation.toLowerCase();
+                    return Object.keys(this.database).find(key => key.toLowerCase() === lowerNoPunctuation) || "";
+                },
+
+                followOptionToken(word) {
+                    let targetKey = this.findTokenKeyByWord(word);
+                    if (!targetKey) {
+                        this.setEditorMessage(`Kein Token für Folgewort "${word}" gefunden.`, true);
+                        return;
+                    }
+
+                    this.dbSearch = "";
+                    this.editorOpenTokens[targetKey] = true;
+                    this.ensureEditorDrafts(targetKey);
+                    this.setEditorMessage(`Zum Token "${targetKey}" gesprungen.`);
+
+                    this.$nextTick(() => {
+                        let el = document.getElementById(this.getTokenDomId(targetKey));
+                        if (!el) {
+                            return;
+                        }
+                        el.scrollIntoView({ behavior: "smooth", block: "center" });
+                        el.classList.add("ring-2", "ring-[#3379fa]/30");
+                        setTimeout(() => el.classList.remove("ring-2", "ring-[#3379fa]/30"), 900);
+                    });
+                },
+
+                normalizeTokenProbabilities(tokenKey) {
+                    let options = this.database[tokenKey] || [];
+                    if (!options.length) {
+                        this.setEditorMessage(`"${tokenKey}" enthält keine Optionen zum Normieren.`, true);
+                        return;
+                    }
+                    let sum = options.reduce((acc, option) => acc + this.sanitizeBase(option.base), 0);
+                    if (sum === 0) {
+                        let even = Number((1 / options.length).toFixed(4));
+                        options.forEach(option => option.base = even);
+                    } else {
+                        options.forEach(option => option.base = Number((this.sanitizeBase(option.base) / sum).toFixed(4)));
+                    }
+                    this.setEditorMessage(`Wahrscheinlichkeiten für "${tokenKey}" normiert.`);
+                    this.updateOptions();
+                },
+
                 // Hilfsfunktion für zufällige Farbe
                 getRandomColor() {
                     return this.tokenColors[Math.floor(Math.random() * this.tokenColors.length)];
@@ -584,7 +953,11 @@
                     
                     // Falls das Wort Satzzeichen enthält, diese für die Suche entfernen
                     let lookupWord = lastWord.replace(/[.,!]/g, "");
-                    let pool = this.database[lookupWord] || this.database["default"];
+                    let pool = this.database[lookupWord] || this.database["default"] || [];
+                    if (!pool.length) {
+                        this.currentOptions = [];
+                        return;
+                    }
                     
                     // Temperatur-Berechnung (simulierte Softmax)
                     let adjusted = pool.map(o => ({
