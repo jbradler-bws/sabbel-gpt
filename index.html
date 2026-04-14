@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sabbel GPT - BWSolution Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Slab:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bw-primary: #fab433;
+            --bw-primary-strong: #f7b130;
+            --bw-accent: #3379fa;
+            --bw-text: #444444;
+            --bw-muted: #878786;
+            --bw-bg: #f8f8f8;
+            --bw-surface: #ffffff;
+            --bw-border: #e6e6e6;
+            --bw-dark: #1f1f1f;
+        }
+        body {
+            font-family: "Roboto", sans-serif;
+            background: var(--bw-bg);
+            color: var(--bw-text);
+        }
+        h1, h2 {
+            font-family: "Roboto Slab", serif;
+        }
+        .bw-card {
+            background: var(--bw-surface);
+            border: 1px solid var(--bw-border);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        }
+        .bw-muted {
+            color: var(--bw-muted);
+        }
+        .token { 
+            display: inline; /* Wichtig für den Zeilenumbruch */
+            animation: popIn 0.3s ease-out;
+            /* Verhindert, dass extrem lange Wörter die Box sprengen */
+            word-wrap: break-word; 
+            overflow-wrap: break-word;
+        }
+        @keyframes popIn { 0% { opacity: 0; transform: scale(0.9); } 100% { opacity: 1; transform: scale(1); } }
+        /* Verhindert Textauswahl beim schnellen Klicken */
+        .no-select { -webkit-user-select: none; user-select: none; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-10">
+
+    <div x-data="carLlmApp()" class="max-w-6xl mx-auto">
+        <header class="mb-10 flex items-center justify-between border-b border-[#e6e6e6] pb-6">
+            <div>
+                <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#f7b130] to-[#3379fa]">
+                    Sabbel GPT <span class="text-xs font-mono text-slate-600">v0.2</span>
+                </h1>
+                <p class="bw-muted mt-1">Interaktive Simulation der Token-Vorhersage eines LLM im Autohandel.</p>
+            </div>
+            <div class="flex gap-3">
+                <button @click="reset()" class="px-4 py-2 text-xs bg-[#444444] hover:bg-[#2b2b2b] text-white rounded-lg transition no-select">Reset</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div class="space-y-6">
+                <div class="bw-card p-6 rounded-2xl">
+                    <h2 class="text-xs uppercase tracking-widest bw-muted font-bold mb-6">Modell-Parameter</h2>
+                    
+                    <div class="mb-8">
+                        <div class="flex justify-between mb-2 no-select">
+                            <label class="text-sm font-medium">Temperatur (Kreativität)</label>
+                            <span x-text="temp" class="text-[#3379fa] font-mono font-bold text-lg"></span>
+                        </div>
+                        <input type="range" x-model="temp" min="0.1" max="1.6" step="0.1" @input="updateOptions()"
+                               class="w-full h-2 bg-[#e6e6e6] rounded-lg appearance-none cursor-pointer accent-[#f7b130]">
+                        <div class="flex justify-between text-[11px] bw-muted mt-2 font-mono">
+                            <span>0.1 (Fakten)</span>
+                            <span>1.6 (Halluzination)</span>
+                        </div>
+                    </div>
+
+                    <button @click="generateNext()" 
+                            class="w-full bg-[#f7b130] hover:bg-[#eb9a06] text-[#1f1f1f] font-bold py-4 rounded-xl transition-all shadow-lg shadow-[#f7b130]/30 active:scale-95 text-lg no-select">
+                        Nächstes Wort würfeln
+                    </button>
+                </div>
+
+                <div class="bw-card p-6 rounded-2xl">
+                    <h2 class="text-xs uppercase tracking-widest bw-muted font-bold mb-4">Nächste Token-Wahrscheinlichkeit</h2>
+                    <div class="space-y-3.5">
+                        <template x-for="opt in currentOptions" :key="opt.word">
+                            <div>
+                                <div class="flex justify-between text-xs mb-1 font-mono">
+                                    <span x-text="'&quot;' + opt.word + '&quot;'" class="text-[#444444]"></span>
+                                    <span x-text="(opt.prob * 100).toFixed(1) + '%'" class="text-[#3379fa]"></span>
+                                </div>
+                                <div class="w-full bg-[#e6e6e6] rounded-full h-2 overflow-hidden">
+                                    <div class="bg-[#3379fa] h-full transition-all duration-500 ease-out" 
+                                         :style="`width: ${opt.prob * 100}%`"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bw-card p-8 rounded-2xl flex flex-col">
+                <div class="flex justify-between items-center mb-6 border-b border-[#e6e6e6] pb-4">
+                    <h2 class="text-sm uppercase tracking-widest bw-muted font-bold">Generierter Verkaufs-Text</h2>
+                    <span class="text-xs font-mono bw-muted" x-text="history.length + ' Tokens'"></span>
+                </div>
+                
+                <div class="flex-grow text-xl md:text-2xl font-light leading-relaxed select-text bg-[#fefefe] p-6 rounded-xl border border-[#e6e6e6] min-h-[300px]">
+                    <template x-for="(token, index) in history" :key="index">
+                        <span x-text="getDisplayToken(token.word, index)" 
+                              :style="`color: ${token.color}`"
+                              class="token inline"></span>
+                    </template>
+                    <span class="w-1.5 h-6 bg-[#f7b130] inline-block animate-pulse align-middle ml-0.5"></span>
+                </div>
+                
+                <div class="mt-8 pt-6 border-t border-[#e6e6e6] text-sm bw-muted space-y-2 bg-[#f8f8f8] p-4 rounded-xl">
+                    <p>💡 <strong>Didaktischer Hinweis:</strong> Ein echtes LLM (wie ChatGPT) liest und schreibt keine fertigen Wörter. Es zerlegt Text in kleine statistische Einheiten, sogenannte **Tokens** (oft Wortteile). </p>
+                    <p>Jedes <span class="font-bold" style="color: #3379fa">farbige</span> Segment oben simuliert ein solches Token. Das Modell berechnet *nur* für das nächste Segment die Wahrscheinlichkeit.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function carLlmApp() {
+            return {
+                temp: 0.7,
+                history: [], // Speichert Objekte: {word: "Hallo", color: "#fff"}
+                currentOptions: [],
+                
+                // Farbpalette für Tokens (Tailwind colors)
+                tokenColors: [
+                    '#f7b130', '#fab433', '#3379fa', '#2563eb', '#878786', '#444444', '#eb9a06', '#6b7280'
+                ],
+
+                // --- GIGANTISCH ERWEITERTE DATENBANK ---
+                // Struktur: "Wort": [{word: "NächstesWort", base: Wahrscheinlichkeit}, ...]
+                database: {
+                    "START": [
+                        {word: "Dieses", base: 0.3}, {word: "Erleben", base: 0.2},
+                        {word: "Der", base: 0.2}, {word: "Suchen", base: 0.1},
+                        {word: "Unsere", base: 0.1}, {word: "Jetzt", base: 0.1}
+                    ],
+                    "Dieses": [
+                        {word: "Modell", base: 0.4}, {word: "Fahrzeug", base: 0.3},
+                        {word: "Angebot", base: 0.2}, {word: "Auto", base: 0.1}
+                    ],
+                    "Fahrzeug": [
+                        {word: "ist", base: 0.3}, {word: "überzeugt", base: 0.2},
+                        {word: "bietet", base: 0.2}, {word: "hat", base: 0.1},
+                        {word: "wurde", base: 0.1}, {word: "kommt", base: 0.1}
+                    ],
+                    "Modell": [
+                        {word: "glänzt", base: 0.4}, {word: "ist", base: 0.3},
+                        {word: "vereint", base: 0.2}, {word: "bietet", base: 0.1}
+                    ],
+                    "ist": [
+                        {word: "scheckheftgepflegt", base: 0.2}, {word: "unfallfrei", base: 0.2},
+                        {word: "sofort", base: 0.15}, {word: "ein", base: 0.15},
+                        {word: "verfügbar", base: 0.1}, {word: "reduziert", base: 0.1},
+                        {word: "elektrisch", base: 0.1}
+                    ],
+                    "sofort": [
+                        {word: "verfügbar", base: 0.8}, {word: "einsatzbereit", base: 0.2}
+                    ],
+                    "verfügbar": [
+                        {word: "und", base: 0.5}, {word: "für", base: 0.3},
+                        {word: ".", base: 0.2}
+                    ],
+                    "bietet": [
+                        {word: "eine", base: 0.3}, {word: "viel", base: 0.3},
+                        {word: "maximale", base: 0.2}, {word: "Komfort", base: 0.1},
+                        {word: "Sicherheit", base: 0.1}
+                    ],
+                    "eine": [
+                        {word: "Rückfahrkamera", base: 0.2}, {word: "Garantie", base: 0.2},
+                        {word: "Lederausstattung", base: 0.2}, {word: "Sitzheizung", base: 0.1},
+                        {word: "Klimaanlage", base: 0.1}, {word: "Anschlussgarantie", base: 0.1},
+                        {word: "Probefahrt", base: 0.1}
+                    ],
+                    "Garantie": [
+                        {word: "von", base: 0.5}, {word: "bis", base: 0.3},
+                        {word: "inklusive", base: 0.2}
+                    ],
+                    "überzeugt": [
+                        {word: "durch", base: 0.6}, {word: "auf", base: 0.3},
+                        {word: "jeden", base: 0.1}
+                    ],
+                    "durch": [
+                        {word: "seine", base: 0.4}, {word: "hochwertige", base: 0.3},
+                        {word: "sparsame", base: 0.2}, {word: "brutale", base: 0.1}
+                    ],
+                    "seine": [
+                        {word: "Leistung", base: 0.3}, {word: "Optik", base: 0.3},
+                        {word: "Ausstattung", base: 0.2}, {word: "Effizienz", base: 0.2}
+                    ],
+                    "Leistung": [
+                        {word: "und", base: 0.6}, {word: "pur", base: 0.3},
+                        {word: ".", base: 0.1}
+                    ],
+                    "vereint": [
+                        {word: "Sportlichkeit", base: 0.4}, {word: "Luxus", base: 0.3},
+                        {word: "Effizienz", base: 0.3}
+                    ],
+                    "Sportlichkeit": [
+                        {word: "mit", base: 0.7}, {word: "und", base: 0.3}
+                    ],
+                    "mit": [
+                        {word: "Allradantrieb", base: 0.2}, {word: "Automatikgetriebe", base: 0.2},
+                        {word: "wenig", base: 0.2}, {word: "einem", base: 0.2},
+                        {word: "Panoramadach", base: 0.1}, {word: "Navigation", base: 0.1}
+                    ],
+                    "wenig": [
+                        {word: "Kilometern", base: 0.9}, {word: "Vorbesitzern", base: 0.1}
+                    ],
+                    "Der": [
+                        {word: "Preis", base: 0.4}, {word: "Motor", base: 0.3},
+                        {word: "Zustand", base: 0.2}, {word: "SUV", base: 0.1}
+                    ],
+                    "Preis": [
+                        {word: "ist", base: 0.6}, {word: "verhandelbar", base: 0.3},
+                        {word: "inklusive", base: 0.1}
+                    ],
+                    "verhandelbar": [
+                        {word: ".", base: 0.8}, {word: "aber", base: 0.2}
+                    ],
+                    "Inklusive": [
+                        {word: "TÜV", base: 0.4}, {word: "Garantie", base: 0.3},
+                        {word: "Winterreifen", base: 0.3}
+                    ],
+                    "TÜV": [
+                        {word: "neu", base: 0.8}, {word: "bis", base: 0.2}
+                    ],
+                    "Unsere": [
+                        {word: "Werkstatt", base: 0.4}, {word: "Angebote", base: 0.3},
+                        {word: "Finanzierung", base: 0.3}
+                    ],
+                    "Finanzierung": [
+                        {word: "ist", base: 0.5}, {word: "möglich", base: 0.4},
+                        {word: "ohne", base: 0.1}
+                    ],
+                    "ohne": [
+                        {word: "Anzahlung", base: 0.9}, {word: "Zinsen", base: 0.1}
+                    ],
+                    "möglich": [
+                        {word: ".", base: 0.7}, {word: "schon", base: 0.3}
+                    ],
+                    "glänzt": [
+                        {word: "in", base: 0.8}, {word: "durch", base: 0.2}
+                    ],
+                    "in": [
+                        {word: "Schwarz", base: 0.3}, {word: "Silber", base: 0.2},
+                        {word: "einem", base: 0.2}, {word: "Top-Zustand", base: 0.2},
+                        {word: "Rot", base: 0.1}
+                    ],
+                    "einem": [
+                        {word: "sehr", base: 0.5}, {word: "fairen", base: 0.3},
+                        {word: "guten", base: 0.2}
+                    ],
+                    "sehr": [
+                        {word: "gepflegten", base: 0.6}, {word: "guten", base: 0.3},
+                        {word: "sparsamen", base: 0.1}
+                    ],
+                    ".": [
+                        {word: "Jetzt", base: 0.3}, {word: "Zusätzlich", base: 0.3},
+                        {word: "Der", base: 0.2}, {word: "Das", base: 0.2}
+                    ],
+                    "und": [
+                        {word: "bietet", base: 0.3}, {word: "ist", base: 0.3},
+                        {word: "sowie", base: 0.2}, {word: "viele", base: 0.2}
+                    ],
+                    "sowie": [
+                        {word: "Garantie", base: 0.4}, {word: "TÜV", base: 0.3},
+                        {word: "Probefahrt", base: 0.3}
+                    ],
+                    "Zusätzlich": [
+                        {word: "erhalten", base: 0.7}, {word: "bieten", base: 0.3}
+                    ],
+                    "erhalten": [
+                        {word: "Sie", base: 0.9}, {word: "zusätzlich", base: 0.1}
+                    ],
+                    "Sie": [
+                        {word: "Winterreifen", base: 0.4}, {word: "eine", base: 0.3},
+                        {word: "unser", base: 0.2}, {word: "sofort", base: 0.1}
+                    ],
+                    "Jetzt": [
+                        {word: "Probefahrt", base: 0.6}, {word: "anrufen", base: 0.3},
+                        {word: "zugreifen", base: 0.1}
+                    ],
+                    "Probefahrt": [
+                        {word: "vereinbaren", base: 0.8}, {word: "möglich", base: 0.2}
+                    ],
+                    "Erleben": [
+                        {word: "Sie", base: 0.35}, {word: "jetzt", base: 0.25},
+                        {word: "Fahrkomfort", base: 0.2}, {word: "Premiumqualität", base: 0.2}
+                    ],
+                    "Suchen": [
+                        {word: "Sie", base: 0.5}, {word: "nach", base: 0.3}, {word: "noch", base: 0.2}
+                    ],
+                    "Angebot": [
+                        {word: "überzeugt", base: 0.3}, {word: "inklusive", base: 0.25},
+                        {word: "mit", base: 0.25}, {word: "heute", base: 0.2}
+                    ],
+                    "Auto": [
+                        {word: "mit", base: 0.35}, {word: "ist", base: 0.3},
+                        {word: "für", base: 0.2}, {word: "inklusive", base: 0.15}
+                    ],
+                    "hat": [
+                        {word: "nur", base: 0.25}, {word: "frischen", base: 0.2},
+                        {word: "eine", base: 0.3}, {word: "Top-Zustand", base: 0.25}
+                    ],
+                    "wurde": [
+                        {word: "regelmäßig", base: 0.35}, {word: "in", base: 0.25},
+                        {word: "vollständig", base: 0.2}, {word: "kürzlich", base: 0.2}
+                    ],
+                    "kommt": [
+                        {word: "mit", base: 0.4}, {word: "inklusive", base: 0.2},
+                        {word: "frischem", base: 0.2}, {word: "direkt", base: 0.2}
+                    ],
+                    "ein": [
+                        {word: "zuverlässiger", base: 0.3}, {word: "sportlicher", base: 0.25},
+                        {word: "moderner", base: 0.25}, {word: "echter", base: 0.2}
+                    ],
+                    "reduziert": [
+                        {word: "auf", base: 0.4}, {word: "bis", base: 0.25},
+                        {word: "deutlich", base: 0.2}, {word: "heute", base: 0.15}
+                    ],
+                    "elektrisch": [
+                        {word: "verstellbaren", base: 0.35}, {word: "anklappbaren", base: 0.25},
+                        {word: "betriebenen", base: 0.2}, {word: "unterstützten", base: 0.2}
+                    ],
+                    "einsatzbereit": [
+                        {word: "für", base: 0.35}, {word: "und", base: 0.3},
+                        {word: ".", base: 0.2}, {word: "sofort", base: 0.15}
+                    ],
+                    "für": [
+                        {word: "Familie", base: 0.25}, {word: "Pendler", base: 0.25},
+                        {word: "Gewerbe", base: 0.25}, {word: "Alltag", base: 0.25}
+                    ],
+                    "viel": [
+                        {word: "Platz", base: 0.35}, {word: "Komfort", base: 0.25},
+                        {word: "Leistung", base: 0.2}, {word: "Sicherheit", base: 0.2}
+                    ],
+                    "maximale": [
+                        {word: "Sicherheit", base: 0.35}, {word: "Effizienz", base: 0.25},
+                        {word: "Leistung", base: 0.2}, {word: "Kontrolle", base: 0.2}
+                    ],
+                    "Komfort": [
+                        {word: "im", base: 0.35}, {word: "durch", base: 0.25},
+                        {word: "für", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Sicherheit": [
+                        {word: "durch", base: 0.35}, {word: "mit", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Rückfahrkamera": [
+                        {word: "und", base: 0.35}, {word: "für", base: 0.25},
+                        {word: "inklusive", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Lederausstattung": [
+                        {word: "und", base: 0.35}, {word: "mit", base: 0.25},
+                        {word: "in", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Sitzheizung": [
+                        {word: "vorne", base: 0.35}, {word: "hinten", base: 0.2},
+                        {word: "inklusive", base: 0.25}, {word: ".", base: 0.2}
+                    ],
+                    "Klimaanlage": [
+                        {word: "automatik", base: 0.3}, {word: "inklusive", base: 0.25},
+                        {word: "und", base: 0.25}, {word: ".", base: 0.2}
+                    ],
+                    "Anschlussgarantie": [
+                        {word: "bis", base: 0.35}, {word: "inklusive", base: 0.25},
+                        {word: "möglich", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "auf": [
+                        {word: "der", base: 0.35}, {word: "langen", base: 0.25},
+                        {word: "jede", base: 0.2}, {word: "Anhieb", base: 0.2}
+                    ],
+                    "jeden": [
+                        {word: "Kilometer", base: 0.4}, {word: "Tag", base: 0.3},
+                        {word: "Anspruch", base: 0.2}, {word: ".", base: 0.1}
+                    ],
+                    "hochwertige": [
+                        {word: "Materialien", base: 0.35}, {word: "Verarbeitung", base: 0.3},
+                        {word: "Ausstattung", base: 0.2}, {word: "Details", base: 0.15}
+                    ],
+                    "sparsame": [
+                        {word: "Motorisierung", base: 0.35}, {word: "Verbrauchswerte", base: 0.25},
+                        {word: "Antriebstechnik", base: 0.2}, {word: "Effizienz", base: 0.2}
+                    ],
+                    "brutale": [
+                        {word: "Beschleunigung", base: 0.45}, {word: "Power", base: 0.25},
+                        {word: "Leistung", base: 0.2}, {word: ".", base: 0.1}
+                    ],
+                    "Optik": [
+                        {word: "mit", base: 0.35}, {word: "und", base: 0.25},
+                        {word: "in", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Ausstattung": [
+                        {word: "inklusive", base: 0.3}, {word: "mit", base: 0.3},
+                        {word: "auf", base: 0.2}, {word: "für", base: 0.2}
+                    ],
+                    "Effizienz": [
+                        {word: "im", base: 0.35}, {word: "und", base: 0.25},
+                        {word: "für", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Luxus": [
+                        {word: "mit", base: 0.4}, {word: "und", base: 0.25},
+                        {word: "pur", base: 0.2}, {word: ".", base: 0.15}
+                    ],
+                    "Allradantrieb": [
+                        {word: "für", base: 0.35}, {word: "und", base: 0.3},
+                        {word: "im", base: 0.2}, {word: ".", base: 0.15}
+                    ],
+                    "Automatikgetriebe": [
+                        {word: "für", base: 0.3}, {word: "und", base: 0.3},
+                        {word: "inklusive", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Panoramadach": [
+                        {word: "und", base: 0.35}, {word: "für", base: 0.25},
+                        {word: "inklusive", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Navigation": [
+                        {word: "inklusive", base: 0.3}, {word: "und", base: 0.3},
+                        {word: "mit", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Kilometern": [
+                        {word: "aus", base: 0.3}, {word: "im", base: 0.25},
+                        {word: "und", base: 0.25}, {word: ".", base: 0.2}
+                    ],
+                    "Vorbesitzern": [
+                        {word: "aus", base: 0.35}, {word: "und", base: 0.3},
+                        {word: ".", base: 0.2}, {word: "nachweisbar", base: 0.15}
+                    ],
+                    "Motor": [
+                        {word: "läuft", base: 0.35}, {word: "ist", base: 0.3},
+                        {word: "bietet", base: 0.2}, {word: "arbeitet", base: 0.15}
+                    ],
+                    "Zustand": [
+                        {word: "ist", base: 0.35}, {word: "wie", base: 0.25},
+                        {word: "überzeugt", base: 0.2}, {word: "top", base: 0.2}
+                    ],
+                    "SUV": [
+                        {word: "mit", base: 0.35}, {word: "für", base: 0.25},
+                        {word: "und", base: 0.2}, {word: "ist", base: 0.2}
+                    ],
+                    "Werkstatt": [
+                        {word: "geprüft", base: 0.35}, {word: "scheckheftgepflegt", base: 0.25},
+                        {word: "inklusive", base: 0.2}, {word: "qualitätsgesichert", base: 0.2}
+                    ],
+                    "Angebote": [
+                        {word: "für", base: 0.35}, {word: "inklusive", base: 0.25},
+                        {word: "mit", base: 0.2}, {word: "ab", base: 0.2}
+                    ],
+                    "Anzahlung": [
+                        {word: "möglich", base: 0.4}, {word: "notwendig", base: 0.1},
+                        {word: "auf", base: 0.25}, {word: "und", base: 0.25}
+                    ],
+                    "Zinsen": [
+                        {word: "ab", base: 0.3}, {word: "möglich", base: 0.25},
+                        {word: "niedrig", base: 0.25}, {word: ".", base: 0.2}
+                    ],
+                    "Schwarz": [
+                        {word: "metallic", base: 0.35}, {word: "mit", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Silber": [
+                        {word: "metallic", base: 0.35}, {word: "mit", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Top-Zustand": [
+                        {word: "und", base: 0.35}, {word: ".", base: 0.25},
+                        {word: "mit", base: 0.2}, {word: "für", base: 0.2}
+                    ],
+                    "Rot": [
+                        {word: "metallic", base: 0.35}, {word: "mit", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "fairen": [
+                        {word: "Preis", base: 0.45}, {word: "Konditionen", base: 0.25},
+                        {word: "Rate", base: 0.2}, {word: ".", base: 0.1}
+                    ],
+                    "guten": [
+                        {word: "Preis", base: 0.35}, {word: "Zustand", base: 0.3},
+                        {word: "Ausstattung", base: 0.2}, {word: ".", base: 0.15}
+                    ],
+                    "gepflegten": [
+                        {word: "Zustand", base: 0.4}, {word: "Innenraum", base: 0.25},
+                        {word: "Fahrzeug", base: 0.2}, {word: ".", base: 0.15}
+                    ],
+                    "sparsamen": [
+                        {word: "Verbrauch", base: 0.4}, {word: "Motor", base: 0.3},
+                        {word: "Unterhalt", base: 0.2}, {word: ".", base: 0.1}
+                    ],
+                    "viele": [
+                        {word: "Extras", base: 0.35}, {word: "Highlights", base: 0.25},
+                        {word: "Vorteile", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "bieten": [
+                        {word: "Ihnen", base: 0.35}, {word: "wir", base: 0.3},
+                        {word: "zusätzlich", base: 0.2}, {word: "mehr", base: 0.15}
+                    ],
+                    "unser": [
+                        {word: "Service", base: 0.4}, {word: "Team", base: 0.3},
+                        {word: "Angebot", base: 0.2}, {word: "Versprechen", base: 0.1}
+                    ],
+                    "anrufen": [
+                        {word: "und", base: 0.35}, {word: "für", base: 0.25},
+                        {word: "jetzt", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "zugreifen": [
+                        {word: "und", base: 0.35}, {word: "jetzt", base: 0.25},
+                        {word: "sofort", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "vereinbaren": [
+                        {word: "Sie", base: 0.35}, {word: "und", base: 0.25},
+                        {word: "jetzt", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "top": [
+                        {word: "gepflegt", base: 0.4}, {word: "ausgestattet", base: 0.25},
+                        {word: "in", base: 0.2}, {word: ".", base: 0.15}
+                    ],
+                    "bereit": [
+                        {word: "zur", base: 0.35}, {word: "für", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "günstig": [
+                        {word: "finanzieren", base: 0.35}, {word: "sichern", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "Das": [
+                        {word: "Fahrzeug", base: 0.35}, {word: "Angebot", base: 0.25},
+                        {word: "Modell", base: 0.2}, {word: "Auto", base: 0.2}
+                    ],
+                    "neu": [
+                        {word: "abgenommen", base: 0.35}, {word: "gemacht", base: 0.2},
+                        {word: "und", base: 0.25}, {word: ".", base: 0.2}
+                    ],
+                    "Winterreifen": [
+                        {word: "inklusive", base: 0.35}, {word: "dabei", base: 0.25},
+                        {word: "und", base: 0.2}, {word: ".", base: 0.2}
+                    ],
+                    "default": [
+                        {word: "und", base: 0.3}, {word: "sowie", base: 0.2},
+                        {word: ".", base: 0.2}, {word: "top", base: 0.1},
+                        {word: "bereit", base: 0.1}, {word: "günstig", base: 0.1}
+                    ]
+                },
+
+                init() {
+                    this.reset();
+                },
+
+                // Hilfsfunktion für zufällige Farbe
+                getRandomColor() {
+                    return this.tokenColors[Math.floor(Math.random() * this.tokenColors.length)];
+                },
+
+                isPunctuationToken(token) {
+                    return /^[.,!?;:]+$/.test(token);
+                },
+
+                getDisplayToken(word, index) {
+                    if (index === 0 || this.isPunctuationToken(word)) {
+                        return word;
+                    }
+                    return ` ${word}`;
+                },
+
+                updateOptions() {
+                    let lastTokenObj = this.history[this.history.length - 1];
+                    let lastWord = lastTokenObj ? lastTokenObj.word : "START";
+                    
+                    // Falls das Wort Satzzeichen enthält, diese für die Suche entfernen
+                    let lookupWord = lastWord.replace(/[.,!]/g, "");
+                    let pool = this.database[lookupWord] || this.database["default"];
+                    
+                    // Temperatur-Berechnung (simulierte Softmax)
+                    let adjusted = pool.map(o => ({
+                        word: o.word,
+                        prob: Math.pow(o.base, 1 / this.temp)
+                    }));
+                    
+                    let sum = adjusted.reduce((a, b) => a + b.prob, 0);
+                    this.currentOptions = adjusted.map(o => ({
+                        word: o.word,
+                        prob: o.prob / sum
+                    })).sort((a,b) => b.prob - a.prob).slice(0, 6); // Nur Top 6 anzeigen
+                },
+
+                generateNext() {
+                    let r = Math.random();
+                    let cumulative = 0;
+                    let selectedWord = "";
+
+                    for (let opt of this.currentOptions) {
+                        cumulative += opt.prob;
+                        if (r <= cumulative) {
+                            selectedWord = opt.word;
+                            break;
+                        }
+                    }
+
+                    if (selectedWord) {
+                        // Füge das Wort UND eine zufällige Farbe hinzu
+                        this.history.push({
+                            word: selectedWord,
+                            color: this.getRandomColor()
+                        });
+                        this.updateOptions();
+                    }
+                    
+                    // Automatischer Stopp bei Punkt (optional, für schönere Sätze)
+                    // if (selectedWord === ".") { /* Könnte man hier stoppen */ }
+                },
+
+                reset() {
+                    this.history = [];
+                    // Start-Token hinzufügen (aber nicht anzeigen, nur für die Logik)
+                    this.updateOptions();
+                    // Erstes echtes Wort generieren
+                    this.generateNext();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
